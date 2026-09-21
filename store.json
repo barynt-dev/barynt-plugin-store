@@ -1,0 +1,6 @@
+{
+  "$schema": "./schemas/store.schema.json",
+  "schemaVersion": 1,
+  "id": "barynt-official",
+  "name": "Barynt Official Plugin Store"
+}

@@ -1,0 +1,4 @@
+# Every change needs a maintainer's review. Add per-plugin owners here once
+# plugins exist, so an update to plugins/<id>/ also needs that plugin's author:
+#   /plugins/<id>/  @maintainer @author
+*  @Jafoson

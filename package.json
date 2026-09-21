@@ -1,0 +1,19 @@
+{
+  "name": "barynt-plugin-store",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "description": "The official Barynt plugin store: one directory per plugin, each entry pins a release archive by SHA-512.",
+  "scripts": {
+    "validate": "bun scripts/validate.ts",
+    "schemas": "bun scripts/build-schemas.ts",
+    "schemas:check": "bun scripts/build-schemas.ts --check",
+    "test": "bun test scripts/"
+  },
+  "dependencies": {
+    "zod": "4.6.0"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.3.14"
+  }
+}

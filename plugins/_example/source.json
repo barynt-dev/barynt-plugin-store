@@ -1,0 +1,13 @@
+{
+  "$schema": "../../schemas/source.schema.json",
+  "repository": "https://github.com/jane-doe/example-plugin",
+  "versions": [
+    {
+      "version": "0.1.0",
+      "download": "https://github.com/jane-doe/example-plugin/releases/download/v0.1.0/example-plugin-0.1.0.tgz",
+      "sha512": "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "released": "2026-09-21",
+      "changelog": "https://github.com/jane-doe/example-plugin/releases/tag/v0.1.0"
+    }
+  ]
+}

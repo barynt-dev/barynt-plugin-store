@@ -1,0 +1,10 @@
+{
+  "id": "example-plugin",
+  "name": "Example Plugin",
+  "version": "0.1.0",
+  "description": "Shows what a store entry looks like. Not a real plugin.",
+  "author": "Jane Doe",
+  "license": "MIT",
+  "barynt": ">=1.0.0",
+  "capabilities": ["issues:read"]
+}

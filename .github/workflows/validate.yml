@@ -1,0 +1,65 @@
+name: Validate entries
+
+# Pull requests: check the entries the PR touches (new versions are downloaded and
+# hashed). Pushes to main and the weekly run: re-verify every published archive
+# against its pinned hash, which notices a release that was changed after the merge.
+#
+# Safety: read-only token, no secrets, and `pull_request` (never
+# `pull_request_target`), so the job runs the PR's own code without privileges. A PR
+# can therefore change the validator itself, which is why every change, in particular
+# under scripts/, schemas/ and .github/, needs a maintainer's review (CODEOWNERS and
+# branch protection). The validator fetches URLs taken from the PR, so it only talks
+# to public https hosts, with size and time limits (see scripts/lib.ts).
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  schedule:
+    - cron: "17 4 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: validate-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: validate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          # Pinned on purpose, same reasoning as in the Barynt repository.
+          bun-version: 1.4.2
+
+      - name: Install
+        run: bun install --frozen-lockfile
+
+      - name: Schemas are up to date
+        run: bun run schemas:check
+
+      - name: Validator tests
+        run: bun test scripts/
+
+      - name: Validate changed entries
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: bun scripts/validate.ts --changed "$BASE_SHA"
+
+      - name: Validate all entries
+        if: github.event_name != 'pull_request'
+        run: bun scripts/validate.ts

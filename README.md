@@ -1,6 +1,6 @@
 # Barynt Plugin Store
 
-The official plugin store for [Barynt](https://github.com/Jafoson/Barynt), a
+The official plugin store for [Barynt](https://github.com/barynt-dev/barynt-web), a
 self-hosted issue tracker.
 
 > **Status: early.** Barynt's plugin system is still being built, so no Barynt

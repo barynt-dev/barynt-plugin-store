@@ -2,12 +2,12 @@
   "id": "github",
   "name": "GitHub",
   "author": "Barynt",
-  "description": "Your GitHub work on the issues it's about: each card shows its pull request with reviews and checks, the issue gets a Development panel with branch, commits and checks, rules move it to In Review or Done as the pull request opens and merges, and a branch starts right from the issue.",
+  "description": "Pull requests, branches and checks on the issues they belong to: on the board, in the issue, and with rules that move the issue along.",
   "repo": "barynt-dev/barynt-plugin-github",
   "provider": "github",
   "locales": {
     "de": {
-      "description": "Deine GitHub-Arbeit an den Issues, um die es geht: Karten zeigen ihren Pull Request mit Reviews und Checks, das Issue ein Panel „Development“ mit Branch, Commits und Checks. Regeln setzen es auf In Review oder Done, wenn der Pull Request geöffnet oder gemergt wird. Branches entstehen im Issue."
+      "description": "Pull Requests, Branches und Checks direkt an ihren Issues: auf dem Board, im Issue und mit Regeln, die das Issue weitersetzen."
     }
   },
   "levels": [
@@ -20,10 +20,12 @@
   "featured": true,
   "added": "2026-11-20",
   "notes": {
+    "0.1.0-beta.3": "A page text and links for the store; needs Barynt 1.1.0-beta.5.\n- A clearer page in English and German: what it shows on the board and in the issue, rules, actions, setup\n- Links to the setup guide, the releases, the issues and the repository\n- A shorter description for tiles and lists",
     "0.1.0-beta.2": "Logo, screenshots and a German description; needs Barynt 1.1.0-beta.2.\n- The plugin shows its logo in the sidebar, the settings and the store\n- Three screenshots: the board, the Development panel, webhook and rules\n- A clearer description, in English and German",
     "0.1.0-beta.1": "The first pre-release, for Barynt 1.1.0 and its betas.\n- A pull request's row on the board cards it names\n- The Development panel in an issue: branch, pull requests, checks, reviews, commits\n- Rules: a pull request opened or merged sets the issue's status\n- Create a branch, copy its name, open a pull request — from the issue"
   },
   "versions": {
+    "0.1.0-beta.3": "6ca34f85f5542ac7322bf02e4531d0a41cdcd2fe11c998128ec4f5a61bc1d4f1",
     "0.1.0-beta.2": "4300efcf43b50c69723dc287781a49f17f03dde78f98cfe9995f16cc3fcf9d87",
     "0.1.0-beta.1": "0588812ddd43503c00e5cea4c2209c23ad60816071db0ace137744035bf17e05"
   }

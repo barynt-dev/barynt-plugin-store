@@ -1,57 +1,45 @@
 # Contributing a plugin
 
-Plugins are added and updated with pull requests. Review works like it does for code:
-CI checks the mechanical parts, a maintainer checks the rest, and the merge is the
-approval.
-
-> The plugin system in Barynt is not released yet, so the manifest format is
-> provisional (see `scripts/schema.ts`). Entries that pass CI today may need
-> small changes when the final manifest schema lands.
+Plugins are added and updated with pull requests. Review works like it does for
+code: CI checks the mechanical parts, a maintainer checks the rest, and the merge
+is the approval.
 
 ## Add a new plugin
 
-1. **Build a release archive** of your plugin: a `.tgz`, `.tar.gz` or `.zip` with
-   `barynt-plugin.json` at the archive root. Regular files only: no symlinks, no
-   absolute or `..` paths. At most 50 MB, 5000 files, 200 MB unpacked.
-2. **Publish it under a stable HTTPS URL**, for example as a GitHub release asset.
-   Never replace or delete a published archive.
-3. **Compute the hash**: `sha512sum your-plugin-1.0.0.tgz | cut -d' ' -f1`
-4. **Create the entry** in `plugins/<plugin-id>/`:
-   - `barynt-plugin.json`: an exact copy of the manifest inside the archive.
-   - `source.json`: one item per version with `version`, `download` and `sha512`
-     (optionally `released` and `changelog`). See [`plugins/_example`](plugins/_example).
+1. **Release it on GitHub**: a release tagged with the version (`0.1.0`, no `v`),
+   with `manifest.json`, `main.js` (for a sandbox plugin), `styles.css` (optional)
+   and the previews the manifest lists, flat. Never change the files of a
+   published release.
+2. **Compute the release hash** — what the plugin template's `bun run release`
+   prints, or by hand:
+   `sha256sum manifest.json main.js styles.css | sort -k2 | sha256sum`
+3. **Add `plugins/<id>.json`** with your entry (see the [README](README.md)), the
+   version and its hash in `versions`.
+4. **Run `bun run build`** and commit the updated `plugins.json` with it.
 5. **Open a pull request.** The `validate` check must pass.
 
 Rules the CI enforces:
 
-- The directory name is the plugin id: lowercase letters, digits and dashes,
-  starting with a letter.
-- `id` in the manifest equals the directory name. `license` is set.
-- `download` is an `https://` URL to a public host.
-- The hash matches, and the manifest inside the archive equals your copy.
-- The manifest `version` equals the newest listed version.
+- The file name is the plugin id, as Barynt allows it.
+- The release's files hash to the listed hash, its `manifest.json` has the
+  entry's `id`, `kind` and `levels`, and the version the entry lists it under.
+- `plugins.json` is what `plugins/` makes.
+- The repository is on GitHub (other hosts aren't checked yet).
 
 ## Publish an update
 
-Add a new item to `versions` and update your `barynt-plugin.json` copy. Do **not**
-edit or remove existing versions: their download and hash are fixed once merged,
-so instances that installed them keep working. Only new versions are downloaded
-and checked in a pull request.
-
-If a version must not be installed any more, set `"revoked": true` (or a reason)
-on it. Instances warn about revoked versions and refuse to install them.
+Add the new version and its hash to `versions` (and, if you like, a line in
+`notes`). Do **not** change or remove listed versions: their files are fixed once
+merged, so instances that installed them keep working. Only new versions are
+downloaded and checked in a pull request.
 
 ## What reviewers look at
 
-- **Capabilities** the manifest asks for. CI lists new ones in the checks summary;
+- **Capabilities** the manifest asks for. CI lists them in the checks summary;
   each has to make sense for what the plugin does.
+- **Network hosts** and **credentials**: what it talks to, and with whose token.
 - **Purpose and description**: does the plugin do what it says?
-- Plugins that run code inside the Barynt server process get a closer look than
-  purely declarative ones.
 - Changes to an existing plugin should come from its author.
-
-A weekly CI run re-downloads every published archive and compares it with its pinned
-hash, so a release that was tampered with after the merge is noticed.
 
 ## Running the checks locally
 

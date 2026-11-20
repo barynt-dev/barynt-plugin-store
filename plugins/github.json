@@ -20,9 +20,11 @@
   "featured": true,
   "added": "2026-11-20",
   "notes": {
+    "0.1.0-beta.2": "Logo, screenshots and a German description; needs Barynt 1.1.0-beta.2.\n- The plugin shows its logo in the sidebar, the settings and the store\n- Three screenshots: the board, the Development panel, webhook and rules\n- A clearer description, in English and German",
     "0.1.0-beta.1": "The first pre-release, for Barynt 1.1.0 and its betas.\n- A pull request's row on the board cards it names\n- The Development panel in an issue: branch, pull requests, checks, reviews, commits\n- Rules: a pull request opened or merged sets the issue's status\n- Create a branch, copy its name, open a pull request — from the issue"
   },
   "versions": {
+    "0.1.0-beta.2": "4300efcf43b50c69723dc287781a49f17f03dde78f98cfe9995f16cc3fcf9d87",
     "0.1.0-beta.1": "0588812ddd43503c00e5cea4c2209c23ad60816071db0ace137744035bf17e05"
   }
 }

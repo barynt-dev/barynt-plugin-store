@@ -3,9 +3,14 @@
     "id": "github",
     "name": "GitHub",
     "author": "Barynt",
-    "description": "Pull requests, branches, commits and checks on the issues they name. Rules move an issue along as its pull request does.",
+    "description": "Your GitHub work on the issues it's about: each card shows its pull request with reviews and checks, the issue gets a Development panel with branch, commits and checks, rules move it to In Review or Done as the pull request opens and merges, and a branch starts right from the issue.",
     "repo": "barynt-dev/barynt-plugin-github",
     "provider": "github",
+    "locales": {
+      "de": {
+        "description": "Deine GitHub-Arbeit an den Issues, um die es geht: Karten zeigen ihren Pull Request mit Reviews und Checks, das Issue ein Panel „Development“ mit Branch, Commits und Checks. Regeln setzen es auf In Review oder Done, wenn der Pull Request geöffnet oder gemergt wird. Branches entstehen im Issue."
+      }
+    },
     "levels": [
       "project"
     ],

@@ -26,6 +26,15 @@ export const PLUGIN_CATEGORIES = [
 
 const semver = z.string().regex(SEMVER, "expected MAJOR.MINOR.PATCH");
 
+/** Barynt's languages (its `PLUGIN_LOCALES`); `description` is English. */
+export const PLUGIN_LOCALES = ["de", "en"] as const;
+const locales = z
+  .partialRecord(
+    z.enum(PLUGIN_LOCALES),
+    z.strictObject({ description: z.string().trim().min(1).max(300).optional() }),
+  )
+  .optional();
+
 export const entrySchema = z.strictObject({
   id: z.string().regex(PLUGIN_ID),
   name: z.string().trim().min(1).max(60),
@@ -37,6 +46,8 @@ export const entrySchema = z.strictObject({
   featured: z.boolean().optional(),
   added: z.iso.date().optional(),
   notes: z.record(semver, z.string().trim().min(1).max(2000)).optional(),
+  /** The description in Barynt's other languages (BARY-235). */
+  locales,
   levels: z.array(z.enum(PLUGIN_LEVELS)).min(1).max(2),
   kind: z.enum(PLUGIN_KINDS),
   versions: z
@@ -57,4 +68,5 @@ export const releaseManifestSchema = z.looseObject({
   capabilities: z.array(z.string()),
   network: z.array(z.string()).optional(),
   previews: z.array(z.looseObject({ file: z.string() })).optional(),
+  logo: z.string().optional(),
 });

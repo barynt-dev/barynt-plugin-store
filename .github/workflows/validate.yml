@@ -1,8 +1,8 @@
 name: Validate entries
 
-# Pull requests: check the entries the PR touches (new versions are downloaded and
-# hashed). Pushes to main and the weekly run: re-verify every published archive
-# against its pinned hash, which notices a release that was changed after the merge.
+# Pull requests: check the entries the PR touches (new versions' release files are
+# downloaded and hashed as Barynt hashes them). Pushes to main and the weekly run:
+# re-verify every listed version, which notices a release changed after the merge.
 #
 # Safety: read-only token, no secrets, and `pull_request` (never
 # `pull_request_target`), so the job runs the PR's own code without privileges. A PR
@@ -48,8 +48,8 @@ jobs:
       - name: Install
         run: bun install --frozen-lockfile
 
-      - name: Schemas are up to date
-        run: bun run schemas:check
+      - name: plugins.json is up to date
+        run: bun run build:check
 
       - name: Validator tests
         run: bun test scripts/

@@ -1,51 +1,32 @@
 import { createHash } from "node:crypto";
 import { lookup } from "node:dns/promises";
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { isIP } from "node:net";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { isDeepStrictEqual } from "node:util";
 import type { z } from "zod";
-import { manifestSchema, PLUGIN_ID, sourceSchema, storeSchema } from "./schema";
+import { type Entry, entrySchema, releaseManifestSchema } from "./schema";
 
-// Everything the CI checks about an entry. Design rules:
-//  - The archive is untrusted input. It is never extracted to disk: we list it,
-//    inspect the listing, and read exactly one member (barynt-plugin.json).
-//  - The download URL is untrusted input too (it comes from a pull request),
-//    so it is fetched only over https, only from public addresses, with a size
-//    and time limit, and every redirect hop is checked again.
+// Everything the CI checks about an entry (BARY-232). A version's release is
+// downloaded file by file — the files Barynt installs — and hashed the way
+// Barynt hashes it; its manifest must say what the entry says.
+//
+// The repository address comes from a pull request, so it's untrusted: files
+// are fetched only over https, only from public addresses, with size and
+// time limits, and every redirect hop is checked again.
 
-export const MAX_ARCHIVE_BYTES = 50 * 1024 * 1024;
-export const MAX_UNPACKED_BYTES = 200 * 1024 * 1024;
-export const MAX_FILES = 5000;
-const MAX_MANIFEST_BYTES = 256 * 1024;
+/** Each release file at most — Barynt's own limits. */
+export const FILE_LIMITS: Record<string, number> = {
+  "manifest.json": 64 * 1024,
+  "main.js": 5 * 1024 * 1024,
+  "styles.css": 1024 * 1024,
+};
+const PREVIEW_MAX = 512 * 1024;
+const PREVIEW_RE = /^preview-[1-6]\.(webp|png)$/;
 const MAX_REDIRECTS = 5;
 const DOWNLOAD_TIMEOUT_MS = 60_000;
 
-type SourceFile = z.infer<typeof sourceSchema>;
-type VersionEntry = SourceFile["versions"][number];
-
-export interface ValidateOptions {
-  /** Tests only: allow http and loopback downloads. */
-  allowLocal?: boolean;
-  /** source.json / barynt-plugin.json at the pull request base (undefined = new plugin or full run). */
-  baseSource?: unknown;
-  baseManifest?: unknown;
-  /** "new": download only versions that are new compared to the base. "all": every version. */
-  verify?: "all" | "new";
-}
-
-export interface PluginResult {
-  id: string;
-  errors: string[];
-  notes: string[];
-  versions: { version: string; status: "verified" | "skipped" | "failed" }[];
-}
-
 export function formatIssues(error: z.ZodError): string[] {
-  return error.issues.map(
-    (issue) => `${issue.path.join(".") || "(root)"}: ${issue.message}`,
-  );
+  return error.issues.map((i) => `${i.path.join(".") || "(entry)"}: ${i.message}`);
 }
 
 // ─── Network ────────────────────────────────────────────────────────────────
@@ -70,12 +51,7 @@ export function isPrivateAddress(ip: string): boolean {
       a >= 224
     );
   }
-  return (
-    lower === "::" ||
-    lower === "::1" ||
-    /^fe[89ab]/.test(lower) ||
-    /^f[cd]/.test(lower)
-  );
+  return lower === "::" || lower === "::1" || /^fe[89ab]/.test(lower) || /^f[cd]/.test(lower);
 }
 
 async function assertPublicHost(hostname: string): Promise<void> {
@@ -84,15 +60,13 @@ async function assertPublicHost(hostname: string): Promise<void> {
     ? [host]
     : (await lookup(host, { all: true })).map((entry) => entry.address);
   if (addresses.length === 0) throw new Error(`${host} does not resolve`);
-  for (const address of addresses) {
-    if (isPrivateAddress(address)) {
+  for (const address of addresses)
+    if (isPrivateAddress(address))
       throw new Error(`${host} resolves to a non-public address (${address})`);
-    }
-  }
 }
 
-async function readCapped(response: Response): Promise<Buffer> {
-  if (!response.body) throw new Error("empty response body");
+async function readCapped(response: Response, max: number): Promise<Uint8Array> {
+  if (!response.body) return new Uint8Array();
   const chunks: Uint8Array[] = [];
   let total = 0;
   const reader = response.body.getReader();
@@ -100,22 +74,26 @@ async function readCapped(response: Response): Promise<Buffer> {
     const { done, value } = await reader.read();
     if (done) break;
     total += value.byteLength;
-    if (total > MAX_ARCHIVE_BYTES) {
+    if (total > max) {
       await reader.cancel();
-      throw new Error(`archive is larger than ${MAX_ARCHIVE_BYTES / 1024 / 1024} MB`);
+      throw new Error(`larger than ${max} bytes`);
     }
     chunks.push(value);
   }
-  return Buffer.concat(chunks);
+  return new Uint8Array(Buffer.concat(chunks));
 }
 
-export async function fetchArchive(url: string, allowLocal = false): Promise<Buffer> {
+/** A release file — `null` when it isn't there (404). */
+export async function fetchFile(
+  url: string,
+  max: number,
+  allowLocal = false,
+): Promise<Uint8Array | null> {
   let current = new URL(url);
   for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
     if (!allowLocal) {
-      if (current.protocol !== "https:") {
+      if (current.protocol !== "https:")
         throw new Error(`only https:// downloads are allowed (got ${current.protocol})`);
-      }
       await assertPublicHost(current.hostname);
     }
     const response = await fetch(current, {
@@ -129,257 +107,162 @@ export async function fetchArchive(url: string, allowLocal = false): Promise<Buf
       current = new URL(location, current);
       continue;
     }
+    if (response.status === 404) return null;
     if (!response.ok) throw new Error(`download failed with HTTP ${response.status}`);
-    if (Number(response.headers.get("content-length") ?? 0) > MAX_ARCHIVE_BYTES) {
-      throw new Error(`archive is larger than ${MAX_ARCHIVE_BYTES / 1024 / 1024} MB`);
-    }
-    return await readCapped(response);
+    return readCapped(response, max);
   }
   throw new Error(`too many redirects (more than ${MAX_REDIRECTS})`);
 }
 
-// ─── Archive inspection (no extraction) ─────────────────────────────────────
+// ─── Releases ───────────────────────────────────────────────────────────────
 
-type ArchiveKind = "tar" | "zip";
-
-function archiveKind(url: string): ArchiveKind {
-  const path = new URL(url).pathname.toLowerCase();
-  if (path.endsWith(".tgz") || path.endsWith(".tar.gz")) return "tar";
-  if (path.endsWith(".zip")) return "zip";
-  throw new Error("download must be a .tgz, .tar.gz or .zip archive");
+/** Where a version's file is: GitHub's release downloads (tag = version). */
+export function releaseFileUrl(
+  entry: Pick<Entry, "repo" | "provider">,
+  version: string,
+  file: string,
+  base = "https://github.com",
+): string {
+  const short = /^[A-Za-z0-9-]+\/[A-Za-z0-9._-]+$/.test(entry.repo);
+  const github = short || /^https:\/\/github\.com\//.test(entry.repo);
+  if (!github || (entry.provider && entry.provider !== "github"))
+    throw new Error("the store checks GitHub releases only for now");
+  const path = short
+    ? entry.repo
+    : entry.repo.replace(/^https:\/\/github\.com\//, "").replace(/\.git$|\/$/g, "");
+  return `${base}/${path}/releases/download/${encodeURIComponent(version)}/${file}`;
 }
 
-function run(command: string[]): string {
-  const result = Bun.spawnSync(command, { stdout: "pipe", stderr: "pipe" });
-  if (result.exitCode !== 0) {
-    throw new Error(`${command[0]} failed: ${result.stderr.toString().trim().slice(0, 300)}`);
-  }
-  return result.stdout.toString();
+const sha256 = (data: Uint8Array | string) =>
+  createHash("sha256").update(data).digest("hex");
+
+/** The release hash, exactly as Barynt computes it: SHA-256 over each
+ *  file's hash and name, sorted by name (`sha256sum … | sort -k2 | sha256sum`). */
+export function releaseHash(files: Record<string, Uint8Array>): string {
+  return sha256(
+    Object.keys(files)
+      .sort()
+      .map((name) => `${sha256(files[name] as Uint8Array)}  ${name}\n`)
+      .join(""),
+  );
 }
 
-interface Listing {
-  names: string[];
-  unpackedBytes: number;
+export interface VersionResult {
+  version: string;
+  errors: string[];
+  capabilities: string[];
 }
 
-function inspectListing(kind: ArchiveKind, file: string): Listing {
-  const names =
-    kind === "tar"
-      ? run(["tar", "-tzf", file]).split("\n").filter(Boolean)
-      : run(["unzip", "-Z1", file]).split("\n").filter(Boolean);
-  if (names.length > MAX_FILES) throw new Error(`archive has more than ${MAX_FILES} entries`);
-
-  // Second pass over the verbose listing: entry types and sizes. The number of
-  // parsed lines must match the number of names, otherwise we cannot vouch for it.
-  const verbose = run(kind === "tar" ? ["tar", "-tvzf", file] : ["unzip", "-Z", file]).split("\n");
-  const pattern =
-    kind === "tar"
-      ? /^([-dlhcbps])\S{9}\s+\S+\s+(\d+)\s+\S+\s+\S+\s+(.+)$/
-      : /^([-dlcbps])\S{6,9}\s+\S+\s+\S+\s+(\d+)\s+\S+\s+\S+\s+\S+\s+\S+\s+(.+)$/;
-  let parsed = 0;
-  let unpackedBytes = 0;
-  for (const line of verbose) {
-    const match = pattern.exec(line);
-    if (!match) continue;
-    parsed++;
-    const [, type = "-", size = "0", name = ""] = match;
-    if (type !== "-" && type !== "d") {
-      throw new Error(`archive contains a link or special file (${name}); only regular files are allowed`);
-    }
-    unpackedBytes += Number(size);
-  }
-  if (parsed !== names.length) {
-    throw new Error("could not read the archive listing reliably");
-  }
-  if (unpackedBytes > MAX_UNPACKED_BYTES) {
-    throw new Error(`archive unpacks to more than ${MAX_UNPACKED_BYTES / 1024 / 1024} MB`);
-  }
-
-  for (const name of names) {
-    if (name.startsWith("/") || name.includes("\\") || name.split("/").includes("..")) {
-      throw new Error(`archive contains an unsafe path: ${name}`);
-    }
-  }
-  return { names, unpackedBytes };
-}
-
-/** Reads barynt-plugin.json from the archive root without extracting anything. */
-export function readArchiveManifest(kind: ArchiveKind, buffer: Buffer): unknown {
-  const dir = mkdtempSync(join(tmpdir(), "barynt-store-"));
-  const file = join(dir, kind === "tar" ? "archive.tgz" : "archive.zip");
+/** One version: its files downloaded, hashed, its manifest checked. */
+export async function verifyVersion(
+  entry: Entry,
+  version: string,
+  options: { allowLocal?: boolean; base?: string } = {},
+): Promise<VersionResult> {
+  const errors: string[] = [];
+  const url = (file: string) => releaseFileUrl(entry, version, file, options.base);
+  const files: Record<string, Uint8Array> = {};
   try {
-    writeFileSync(file, buffer);
-    const { names } = inspectListing(kind, file);
-    const member = names.find((name) => name === "barynt-plugin.json" || name === "./barynt-plugin.json");
-    if (!member) throw new Error("barynt-plugin.json must be at the archive root");
-    const text = kind === "tar" ? run(["tar", "-xzOf", file, member]) : run(["unzip", "-p", file, member]);
-    if (text.length > MAX_MANIFEST_BYTES) throw new Error("barynt-plugin.json is larger than 256 KB");
-    try {
-      return JSON.parse(text);
-    } catch {
-      throw new Error("barynt-plugin.json inside the archive is not valid JSON");
+    for (const [name, max] of Object.entries(FILE_LIMITS)) {
+      const bytes = await fetchFile(url(name), max, options.allowLocal);
+      if (bytes) files[name] = bytes;
     }
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
+  } catch (error) {
+    return { version, errors: [String((error as Error).message)], capabilities: [] };
   }
+  const raw = files["manifest.json"];
+  if (!raw) return { version, errors: ["manifest.json: not in the release"], capabilities: [] };
+  let json: unknown;
+  try {
+    json = JSON.parse(new TextDecoder().decode(raw));
+  } catch {
+    return { version, errors: ["manifest.json: not valid JSON"], capabilities: [] };
+  }
+  const parsed = releaseManifestSchema.safeParse(json);
+  if (!parsed.success)
+    return { version, errors: formatIssues(parsed.error).map((e) => `manifest.json ${e}`), capabilities: [] };
+  const m = parsed.data;
+  if (m.kind === "sandbox" && !files["main.js"]) errors.push("main.js: not in the release");
+  for (const preview of m.previews ?? []) {
+    if (!PREVIEW_RE.test(preview.file)) {
+      errors.push(`previews: ${preview.file} isn't preview-1 … preview-6 (.webp or .png)`);
+      continue;
+    }
+    const bytes = await fetchFile(url(preview.file), PREVIEW_MAX, options.allowLocal).catch(
+      (e: Error) => {
+        errors.push(`${preview.file}: ${e.message}`);
+        return null;
+      },
+    );
+    if (bytes) files[preview.file] = bytes;
+    else errors.push(`${preview.file}: listed in the manifest, not in the release`);
+  }
+  if (m.id !== entry.id) errors.push(`manifest id is ${m.id}, the entry's ${entry.id}`);
+  if (m.version !== version) errors.push(`manifest version is ${m.version}, not ${version}`);
+  if (m.kind !== entry.kind) errors.push(`manifest kind is ${m.kind}, the entry's ${entry.kind}`);
+  if ([...m.levels].sort().join() !== [...entry.levels].sort().join())
+    errors.push(`manifest levels are ${m.levels.join(", ")}, the entry's ${entry.levels.join(", ")}`);
+  const hash = releaseHash(files);
+  if (hash !== entry.versions[version])
+    errors.push(`hash mismatch: the release's files hash to ${hash}`);
+  return { version, errors, capabilities: m.capabilities };
 }
 
 // ─── Entries ────────────────────────────────────────────────────────────────
 
-function readJson(path: string): unknown {
-  try {
-    return JSON.parse(readFileSync(path, "utf8"));
-  } catch (error) {
-    throw new Error(`${path}: ${error instanceof Error ? error.message : String(error)}`);
-  }
-}
-
-export function listPluginIds(root: string): string[] {
-  const plugins = join(root, "plugins");
-  if (!existsSync(plugins)) return [];
-  return readdirSync(plugins)
-    .filter((name) => !name.startsWith("_") && !name.startsWith("."))
-    .filter((name) => statSync(join(plugins, name)).isDirectory())
+export function listEntryFiles(root: string): string[] {
+  return readdirSync(join(root, "plugins"))
+    .filter((f) => f.endsWith(".json"))
     .sort();
 }
 
-export function validateStoreFile(root: string): string[] {
-  const path = join(root, "store.json");
-  if (!existsSync(path)) return ["store.json is missing"];
-  try {
-    const result = storeSchema.safeParse(readJson(path));
-    return result.success ? [] : formatIssues(result.error).map((issue) => `store.json: ${issue}`);
-  } catch (error) {
-    return [error instanceof Error ? error.message : String(error)];
-  }
+export interface EntryResult {
+  id: string;
+  errors: string[];
+  versions: VersionResult[];
 }
 
-function newest(versions: VersionEntry[]): VersionEntry {
-  const active = versions.filter((entry) => !entry.revoked);
-  const pool = active.length > 0 ? active : versions;
-  return pool.reduce((best, entry) => (Bun.semver.order(entry.version, best.version) > 0 ? entry : best));
+/**
+ * An entry file: its shape, its name, and — `verify` — the versions to
+ * download. A version already listed at the base must not change: its
+ * files are fixed once merged.
+ */
+export async function validateEntry(
+  file: string,
+  raw: unknown,
+  options: {
+    base?: unknown;
+    verify: "all" | "new";
+    allowLocal?: boolean;
+    releaseBase?: string;
+  },
+): Promise<EntryResult> {
+  const parsed = entrySchema.safeParse(raw);
+  const id = file.replace(/\.json$/, "");
+  if (!parsed.success) return { id, errors: formatIssues(parsed.error), versions: [] };
+  const entry = parsed.data;
+  const errors: string[] = [];
+  if (entry.id !== id) errors.push(`id is ${entry.id}, the file is ${file}`);
+  const before = entrySchema.safeParse(options.base);
+  const old = before.success ? before.data.versions : {};
+  for (const [version, hash] of Object.entries(old)) {
+    if (!(version in entry.versions)) errors.push(`${version}: a released version can't be removed`);
+    else if (entry.versions[version] !== hash) errors.push(`${version}: a released version's hash can't change`);
+  }
+  const toCheck = Object.keys(entry.versions).filter(
+    (v) => options.verify === "all" || !(v in old),
+  );
+  const versions: VersionResult[] = [];
+  for (const version of toCheck)
+    versions.push(
+      await verifyVersion(entry, version, {
+        allowLocal: options.allowLocal,
+        base: options.releaseBase,
+      }),
+    );
+  return { id, errors, versions };
 }
 
-export async function validatePlugin(
-  root: string,
-  id: string,
-  options: ValidateOptions = {},
-): Promise<PluginResult> {
-  const result: PluginResult = { id, errors: [], notes: [], versions: [] };
-  const dir = join(root, "plugins", id);
-  const fail = (message: string) => result.errors.push(message);
-
-  if (!PLUGIN_ID.test(id)) {
-    fail(`directory name "${id}" is not a valid plugin id (a-z, 0-9 and dashes, starting with a letter)`);
-    return result;
-  }
-
-  let manifestRaw: unknown;
-  let sourceRaw: unknown;
-  try {
-    manifestRaw = readJson(join(dir, "barynt-plugin.json"));
-    sourceRaw = readJson(join(dir, "source.json"));
-  } catch (error) {
-    fail(error instanceof Error ? error.message : String(error));
-    return result;
-  }
-
-  const manifest = manifestSchema.safeParse(manifestRaw);
-  if (!manifest.success) {
-    for (const issue of formatIssues(manifest.error)) fail(`barynt-plugin.json: ${issue}`);
-  }
-  const source = sourceSchema.safeParse(sourceRaw);
-  if (!source.success) {
-    for (const issue of formatIssues(source.error)) fail(`source.json: ${issue}`);
-  }
-  if (!manifest.success || !source.success) return result;
-
-  if (manifest.data.id !== id) {
-    fail(`barynt-plugin.json: id "${manifest.data.id}" must equal the directory name "${id}"`);
-  }
-
-  const latest = newest(source.data.versions);
-  if (manifest.data.version !== latest.version) {
-    fail(`barynt-plugin.json: version ${manifest.data.version} must equal the newest listed version ${latest.version}`);
-  }
-
-  // Compare with the pull request base: published versions are immutable.
-  const base = options.baseSource === undefined ? undefined : sourceSchema.safeParse(options.baseSource);
-  const baseVersions = new Map<string, VersionEntry>();
-  if (base?.success) {
-    for (const entry of base.data.versions) baseVersions.set(entry.version, entry);
-    for (const previous of base.data.versions) {
-      const current = source.data.versions.find((entry) => entry.version === previous.version);
-      if (!current) {
-        fail(`version ${previous.version} was removed; published versions stay listed, mark it "revoked" instead`);
-      } else if (current.sha512 !== previous.sha512 || current.download !== previous.download) {
-        fail(`version ${previous.version} was already published; its download and sha512 must not change (publish a new version instead)`);
-      }
-    }
-  }
-
-  // New capabilities are what a reviewer has to look at first.
-  const baseManifest = options.baseManifest === undefined ? undefined : manifestSchema.safeParse(options.baseManifest);
-  const manifestChanged = !baseManifest?.success || !isDeepStrictEqual(baseManifest.data, manifest.data);
-  if (baseManifest?.success) {
-    const added = manifest.data.capabilities.filter((cap) => !baseManifest.data.capabilities.includes(cap));
-    const removed = baseManifest.data.capabilities.filter((cap) => !manifest.data.capabilities.includes(cap));
-    if (added.length > 0) result.notes.push(`new capabilities: ${added.join(", ")}`);
-    if (removed.length > 0) result.notes.push(`removed capabilities: ${removed.join(", ")}`);
-  } else if (manifest.data.capabilities.length > 0) {
-    result.notes.push(`capabilities: ${manifest.data.capabilities.join(", ")}`);
-  }
-
-  // Download and hash the versions that are new (or all, in a full run). The
-  // newest version is always checked when the manifest copy changed.
-  for (const entry of source.data.versions) {
-    const isNew = !baseVersions.has(entry.version);
-    const mustVerify =
-      options.verify === "new" && base?.success
-        ? isNew || (entry.version === latest.version && manifestChanged)
-        : true;
-    if (!mustVerify) {
-      result.versions.push({ version: entry.version, status: "skipped" });
-      continue;
-    }
-    const problems = await verifyVersion(id, entry, entry.version === latest.version ? manifest.data : undefined, options.allowLocal ?? false);
-    if (problems.length === 0) {
-      result.versions.push({ version: entry.version, status: "verified" });
-    } else {
-      result.versions.push({ version: entry.version, status: "failed" });
-      for (const problem of problems) fail(`${entry.version}: ${problem}`);
-    }
-  }
-  return result;
-}
-
-async function verifyVersion(
-  id: string,
-  entry: VersionEntry,
-  entryManifest: z.infer<typeof manifestSchema> | undefined,
-  allowLocal: boolean,
-): Promise<string[]> {
-  try {
-    const kind = archiveKind(entry.download);
-    const buffer = await fetchArchive(entry.download, allowLocal);
-    const actual = createHash("sha512").update(buffer).digest("hex");
-    if (actual !== entry.sha512) {
-      return [`sha512 mismatch: source.json pins ${entry.sha512.slice(0, 16)}…, the download hashes to ${actual.slice(0, 16)}…`];
-    }
-    const inside = manifestSchema.safeParse(readArchiveManifest(kind, buffer));
-    if (!inside.success) {
-      return formatIssues(inside.error).map((issue) => `manifest in archive: ${issue}`);
-    }
-    const problems: string[] = [];
-    if (inside.data.id !== id) problems.push(`manifest in archive has id "${inside.data.id}", expected "${id}"`);
-    if (inside.data.version !== entry.version) {
-      problems.push(`manifest in archive has version ${inside.data.version}, source.json lists ${entry.version}`);
-    }
-    if (entryManifest && !isDeepStrictEqual(inside.data, entryManifest)) {
-      problems.push("barynt-plugin.json in the entry differs from the manifest inside the archive (it must be a verbatim copy)");
-    }
-    return problems;
-  } catch (error) {
-    return [error instanceof Error ? error.message : String(error)];
-  }
+export function readJson(path: string): unknown {
+  return JSON.parse(readFileSync(path, "utf8"));
 }

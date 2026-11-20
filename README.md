@@ -1,39 +1,54 @@
 # Barynt Plugin Store
 
-The official plugin store for [Barynt](https://github.com/Jafoson/Barynt), a
-self-hosted issue tracker.
+The official plugin directory for [Barynt](https://github.com/barynt-dev/barynt-web),
+a self-hosted issue tracker. Barynt reads it as a plugin source: **Admin → Plugins →
+Add source**, `https://github.com/barynt-dev/barynt-plugin-store` (provider GitHub).
 
-> **Status: early.** Barynt's plugin system is still being built, so no Barynt
-> release reads this repository yet. The layout and the manifest schema below are
-> provisional and will change until the plugin system ships. The tooling in this
-> repository (validation, CI) already works.
+> **Status: early.** Plugins come with Barynt 1.1.0. Until that's released, what's
+> listed here is a pre-release.
 
 ## How it works
 
-The store is this Git repository. It contains **entries, not plugin code**. An
-entry says where to download a plugin's release archive and pins that archive by
-its SHA-512 hash:
+The directory is this Git repository. It contains **entries, not plugin code**:
 
 ```
-store.json                  store id and name
-plugins/
-  <plugin-id>/
-    barynt-plugin.json      the plugin's manifest, a verbatim copy of the one inside the archive
-    source.json             download link and SHA-512 for every published version
+plugins.json          what Barynt reads — made from plugins/ (`bun run build`)
+plugins/<id>.json     one plugin's entry
 ```
 
+An entry says where a plugin lives and pins each of its versions by its **release
+hash**, the SHA-256 Barynt checks when it installs:
+
+```json
+{
+  "id": "github",
+  "name": "GitHub",
+  "author": "Barynt",
+  "description": "Pull requests, branches, commits and checks on the issues they name.",
+  "repo": "barynt-dev/barynt-plugin-github",
+  "levels": ["project"],
+  "kind": "sandbox",
+  "categories": ["development"],
+  "versions": { "0.1.0-beta.1": "<the release hash>" }
+}
+```
+
+- A **release** is a GitHub release tagged with the version itself (`1.2.0`, not
+  `v1.2.0`), its files flat: `manifest.json`, `main.js`, `styles.css`, previews.
 - **Authors** add or update an entry with a pull request.
-- **CI** downloads the archive, checks the hash, compares the manifest inside the
-  archive with the copy in the entry and reports new capabilities for review.
+- **CI** downloads each new version's files, computes the release hash as Barynt
+  does, compares the manifest with the entry and lists the capabilities it asks for.
 - **Maintainers** review and merge. **A merged entry is what makes a plugin
-  verified**: a Barynt instance installs only what matches the pinned hash, so a
-  release that is changed afterwards is refused instead of installed.
-- **Barynt instances** keep a local clone of this repository, show its plugins in
-  the admin area and install from the authors' release links.
+  verified**: Barynt installs only files that match the pinned hash, so a release
+  changed afterwards is refused. A weekly run checks every version again.
 
-Want a private or company-internal store? A store is just a repository with this
-layout. Fork this one or start from the schemas in [`schemas/`](schemas), and add its
-Git URL in your Barynt instance's system settings once that is supported.
+How a release and its hash are made is in Barynt's
+[publishing docs](https://github.com/barynt-dev/barynt-web/blob/main/docs/dev/plugins-publishing.md);
+the [plugin template](https://github.com/barynt-dev/barynt-plugin-template) does it
+with `bun run release` and its CI.
+
+Want a private or company-internal directory? It's just a repository with a
+`plugins.json` like this one — or a `plugins.json` on any web server.
 
 ## Adding a plugin
 
@@ -45,13 +60,13 @@ Requires [Bun](https://bun.sh).
 
 ```sh
 bun install
-bun test                   # validator tests
-bun run schemas            # regenerate schemas/*.json from scripts/schema.ts
-bun run validate           # check every entry (downloads the archives)
+bun test               # the checks' tests
+bun run build          # plugins.json from plugins/
+bun run validate       # check every entry (downloads the releases)
 ```
 
-`scripts/schema.ts` is the single source of truth for the entry format; the JSON
-Schemas in `schemas/` are generated from it and checked in CI.
+`scripts/schema.ts` mirrors the entry format of Barynt's
+`lib/plugins/directory.ts`.
 
 ## License
 

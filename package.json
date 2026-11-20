@@ -3,11 +3,11 @@
   "private": true,
   "type": "module",
   "license": "MIT",
-  "description": "The official Barynt plugin store: one directory per plugin, each entry pins a release archive by SHA-512.",
+  "description": "The official Barynt plugin directory: one entry per plugin, each version pinned by its release hash.",
   "scripts": {
+    "build": "bun scripts/build.ts",
+    "build:check": "bun scripts/build.ts --check",
     "validate": "bun scripts/validate.ts",
-    "schemas": "bun scripts/build-schemas.ts",
-    "schemas:check": "bun scripts/build-schemas.ts --check",
     "test": "bun test scripts/"
   },
   "dependencies": {

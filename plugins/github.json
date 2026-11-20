@@ -1,0 +1,19 @@
+{
+  "id": "github",
+  "name": "GitHub",
+  "author": "Barynt",
+  "description": "Pull requests, branches, commits and checks on the issues they name. Rules move an issue along as its pull request does.",
+  "repo": "barynt-dev/barynt-plugin-github",
+  "provider": "github",
+  "levels": ["project"],
+  "kind": "sandbox",
+  "categories": ["development"],
+  "featured": true,
+  "added": "2026-11-20",
+  "notes": {
+    "0.1.0-beta.1": "The first pre-release, for Barynt 1.1.0 and its betas.\n- A pull request's row on the board cards it names\n- The Development panel in an issue: branch, pull requests, checks, reviews, commits\n- Rules: a pull request opened or merged sets the issue's status\n- Create a branch, copy its name, open a pull request — from the issue"
+  },
+  "versions": {
+    "0.1.0-beta.1": "0588812ddd43503c00e5cea4c2209c23ad60816071db0ace137744035bf17e05"
+  }
+}

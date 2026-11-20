@@ -22,6 +22,8 @@ export const FILE_LIMITS: Record<string, number> = {
 };
 const PREVIEW_MAX = 512 * 1024;
 const PREVIEW_RE = /^preview-[1-6]\.(webp|png)$/;
+const LOGO_MAX = 128 * 1024;
+const LOGO_RE = /^logo\.(webp|png)$/;
 const MAX_REDIRECTS = 5;
 const DOWNLOAD_TIMEOUT_MS = 60_000;
 
@@ -196,6 +198,20 @@ export async function verifyVersion(
     );
     if (bytes) files[preview.file] = bytes;
     else errors.push(`${preview.file}: listed in the manifest, not in the release`);
+  }
+  // The logo it names is part of the release and its hash too (BARY-235).
+  if (m.logo !== undefined) {
+    if (!LOGO_RE.test(m.logo)) errors.push(`logo: ${m.logo} isn't logo.png or logo.webp`);
+    else {
+      const bytes = await fetchFile(url(m.logo), LOGO_MAX, options.allowLocal).catch(
+        (e: Error) => {
+          errors.push(`${m.logo}: ${e.message}`);
+          return null;
+        },
+      );
+      if (bytes) files[m.logo] = bytes;
+      else errors.push(`${m.logo}: named in the manifest, not in the release`);
+    }
   }
   if (m.id !== entry.id) errors.push(`manifest id is ${m.id}, the entry's ${entry.id}`);
   if (m.version !== version) errors.push(`manifest version is ${m.version}, not ${version}`);

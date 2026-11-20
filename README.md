@@ -29,12 +29,16 @@ hash**, the SHA-256 Barynt checks when it installs:
   "levels": ["project"],
   "kind": "sandbox",
   "categories": ["development"],
+  "locales": { "de": { "description": "Pull Requests, Branches, Commits und Checks an den Issues, die sie nennen." } },
   "versions": { "0.1.0-beta.1": "<the release hash>" }
 }
 ```
 
 - A **release** is a GitHub release tagged with the version itself (`1.2.0`, not
-  `v1.2.0`), its files flat: `manifest.json`, `main.js`, `styles.css`, previews.
+  `v1.2.0`), its files flat: `manifest.json`, `main.js`, `styles.css`, the logo
+  and the previews its manifest names.
+- `locales` gives the description in Barynt's other languages (`de`); the
+  store shows each person theirs before the plugin is installed.
 - **Authors** add or update an entry with a pull request.
 - **CI** downloads each new version's files, computes the release hash as Barynt
   does, compares the manifest with the entry and lists the capabilities it asks for.

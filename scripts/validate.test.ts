@@ -110,6 +110,30 @@ describe("an entry", () => {
   });
 });
 
+describe("a logo and other languages (BARY-235)", () => {
+  it("hashes the logo along, and takes descriptions in Barynt's languages", async () => {
+    const files = {
+      "manifest.json": manifest({ logo: "logo.png" }),
+      "main.js": "x",
+      "logo.png": "png",
+    };
+    const hash = release(files);
+    const r = await check(
+      entry({ "0.1.0-beta.1": hash }, { locales: { de: { description: "Pull Requests an Issues." } } }),
+    );
+    expect(r.errors).toEqual([]);
+    expect(r.versions[0].errors).toEqual([]);
+    const { "logo.png": _, ...noLogo } = files;
+    release(noLogo);
+    expect((await check(entry({ "0.1.0-beta.1": hash }))).versions[0].errors).toContain(
+      "logo.png: named in the manifest, not in the release",
+    );
+    expect(
+      (await check(entry({ "0.1.0-beta.1": hash }, { locales: { fr: { description: "x" } } }))).errors.length,
+    ).toBeGreaterThan(0);
+  });
+});
+
 describe("where a release is", () => {
   it("reads GitHub releases, by short name or address", () => {
     expect(releaseFileUrl({ repo: "acme/github" }, "1.0.0", "main.js")).toBe(

@@ -24,6 +24,22 @@ const PREVIEW_MAX = 512 * 1024;
 const PREVIEW_RE = /^preview-[1-6]\.(webp|png)$/;
 const LOGO_MAX = 128 * 1024;
 const LOGO_RE = /^logo\.(webp|png)$/;
+/** The page text a manifest names, as a file of the release (BARY-237):
+ *  `description.about`, per language too, when it's `about.md` or
+ *  `about.<lang>.md` — Markdown written in the manifest is no file. */
+const ABOUT_MAX = 20 * 1024;
+const ABOUT_RE = /^about(\.(de|en))?\.md$/;
+
+/** The page text files a manifest names. */
+export function aboutFiles(manifest: unknown): string[] {
+  const at = (o: unknown, key: string) =>
+    o && typeof o === "object" ? (o as Record<string, unknown>)[key] : undefined;
+  const values = [at(at(manifest, "description"), "about")];
+  const locales = at(manifest, "locales");
+  if (locales && typeof locales === "object")
+    for (const texts of Object.values(locales)) values.push(at(at(texts, "description"), "about"));
+  return [...new Set(values.filter((v): v is string => typeof v === "string" && ABOUT_RE.test(v)))];
+}
 const MAX_REDIRECTS = 5;
 const DOWNLOAD_TIMEOUT_MS = 60_000;
 
@@ -212,6 +228,15 @@ export async function verifyVersion(
       if (bytes) files[m.logo] = bytes;
       else errors.push(`${m.logo}: named in the manifest, not in the release`);
     }
+  }
+  // So are the page text files it names (BARY-237).
+  for (const name of aboutFiles(json)) {
+    const bytes = await fetchFile(url(name), ABOUT_MAX, options.allowLocal).catch((e: Error) => {
+      errors.push(`${name}: ${e.message}`);
+      return null;
+    });
+    if (bytes) files[name] = bytes;
+    else errors.push(`${name}: named in the manifest, not in the release`);
   }
   if (m.id !== entry.id) errors.push(`manifest id is ${m.id}, the entry's ${entry.id}`);
   if (m.version !== version) errors.push(`manifest version is ${m.version}, not ${version}`);

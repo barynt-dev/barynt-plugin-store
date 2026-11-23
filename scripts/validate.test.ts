@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 import { createHash } from "node:crypto";
-import { isPrivateAddress, releaseFileUrl, releaseHash, validateEntry } from "./lib";
+import { aboutFiles, isPrivateAddress, releaseFileUrl, releaseHash, validateEntry } from "./lib";
 
 // The store's checks (BARY-232) against a local stand-in for GitHub's
 // release downloads: /<owner>/<repo>/releases/download/<version>/<file>.
@@ -131,6 +131,32 @@ describe("a logo and other languages (BARY-235)", () => {
     expect(
       (await check(entry({ "0.1.0-beta.1": hash }, { locales: { fr: { description: "x" } } }))).errors.length,
     ).toBeGreaterThan(0);
+  });
+});
+
+describe("page text files (BARY-237)", () => {
+  it("hashes the about files the description names, per language too", async () => {
+    const files = {
+      "manifest.json": manifest({
+        description: { short: "Pull requests on issues.", about: "about.md" },
+        locales: { de: { description: { short: "Pull Requests an Issues.", about: "about.de.md" } } },
+      }),
+      "main.js": "x",
+      "about.md": "## Why",
+      "about.de.md": "## Warum",
+    };
+    const hash = release(files);
+    expect((await check(entry({ "0.1.0-beta.1": hash }))).versions[0].errors).toEqual([]);
+    const { "about.de.md": _, ...noGerman } = files;
+    release(noGerman);
+    expect((await check(entry({ "0.1.0-beta.1": hash }))).versions[0].errors).toContain(
+      "about.de.md: named in the manifest, not in the release",
+    );
+  });
+
+  it("asks for no file when the text is written in the manifest", () => {
+    expect(aboutFiles({ description: { short: "x", about: "## Inline" } })).toEqual([]);
+    expect(aboutFiles({ description: { short: "x", about: "../main.js" } })).toEqual([]);
   });
 });
 
